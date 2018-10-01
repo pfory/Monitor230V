@@ -154,7 +154,7 @@ void loop(void) {
   if (millis() - milisLastSend > SENDINTERVAL) {
     milisLastSend = millis();
     digitalWrite(STATUSLED, HIGH);
-    delay(1000);
+    delay(200);
     MQTT_connect();
     if (! version.publish(versionSW)) {
       DEBUG_PRINTLN("version SW send failed");
