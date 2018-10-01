@@ -1,2 +1,2 @@
-Zapojení LED http://mujweb.cz/cbov/schemata/svit_2ma.htm, místo LED použít optoèlen napø. https://www.gme.cz/pc817b-k10101b
+Zapojení LED 	+místo LED použít optoèlen napø. https://www.gme.cz/pc817b-k10101b
 ESP8266-01 vyzkoušet pøepnutí Rx/Tx pinù do módu normálních IO https://arduino.stackexchange.com/questions/29938/how-to-i-make-the-tx-and-rx-pins-on-an-esp-8266-01-into-gpio-pins

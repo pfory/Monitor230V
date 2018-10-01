@@ -27,11 +27,11 @@
 #endif 
 
 #define PORTSPEED     115200
-#define SENDINTERVAL  60000  //60sec
+#define SENDINTERVAL  5000  //60sec
 #define MEASINTERVAL   1000  //1s
 
-#define STATUSLED     3
-#define PINMONITOR    1
+#define STATUSLED     2
+#define PINMONITOR    3
 
 //for LED status
 #include <Ticker.h>
@@ -40,9 +40,7 @@ Ticker ticker;
 void tick()
 {
   //toggle state
-  int state = digitalRead(BUILTIN_LED);  // get the current state of GPIO1 pin
-  digitalWrite(BUILTIN_LED, !state);     // set pin to the opposite state
-  state = digitalRead(STATUSLED);  // get the current state of GPIO1 pin
+  int state = digitalRead(STATUSLED);  // get the current state of GPIO1 pin
   digitalWrite(STATUSLED, !state);     // set pin to the opposite state
 }
 
@@ -90,7 +88,6 @@ void setup(void) {
   DEBUG_PRINT(versionSWString);
   DEBUG_PRINT(versionSW);
   //set led pin as output
-  pinMode(BUILTIN_LED, OUTPUT);
   pinMode(STATUSLED, OUTPUT);
   // start ticker with 0.5 because we start in AP mode and try to connect
   ticker.attach(0.6, tick);
@@ -112,7 +109,7 @@ void setup(void) {
     heartBeat=7;
   }
 
-  wifiManager.setConnectTimeout(600); //5min
+  wifiManager.setConnectTimeout(10);
 
   //set callback that gets called when connecting to previous WiFi fails, and enters Access Point mode
   wifiManager.setAPCallback(configModeCallback);
@@ -127,35 +124,37 @@ void setup(void) {
   }
   ticker.detach();
   //keep LED on
-  digitalWrite(BUILTIN_LED, HIGH);
-  digitalWrite(STATUSLED, HIGH);
 }
 
 void loop(void) {
 
   if (millis() - milisLastMeas > MEASINTERVAL) {
+    DEBUG_PRINTLN("Meassurement");
+    milisLastMeas = millis();
     //monitor
     //********** CHANGE PIN FUNCTION  TO GPIO **********
     //GPIO 1 (TX) swap the pin to a GPIO.
-    pinMode(PINMONITOR, FUNCTION_3); 
+    //pinMode(PINMONITOR, FUNCTION_3); 
     //GPIO 3 (RX) swap the pin to a GPIO.
-    pinMode(STATUSLED, FUNCTION_3); 
+    pinMode(PINMONITOR, FUNCTION_3); 
     //**************************************************
 
     stavSite = digitalRead(PINMONITOR);
-    digitalWrite(STATUSLED,stavSite);
+    //digitalWrite(PINMONITOR,stavSite);
 
     //********** CHANGE PIN FUNCTION  TO TX/RX **********
     //GPIO 1 (TX) swap the pin to a TX.
-    pinMode(PINMONITOR, FUNCTION_0); 
+    //pinMode(PINMONITOR, FUNCTION_0); 
     //GPIO 3 (RX) swap the pin to a RX.
-    pinMode(STATUSLED, FUNCTION_0); 
-    //***************************************************
+    pinMode(PINMONITOR, FUNCTION_0); 
+   //***************************************************
+    digitalWrite(STATUSLED, stavSite);
   }
   
   if (millis() - milisLastSend > SENDINTERVAL) {
     milisLastSend = millis();
-    ticker.attach(0.2, tick);
+    digitalWrite(STATUSLED, HIGH);
+    delay(1000);
     MQTT_connect();
     if (! version.publish(versionSW)) {
       DEBUG_PRINTLN("version SW send failed");
@@ -168,15 +167,13 @@ void loop(void) {
       DEBUG_PRINTLN("HB send OK!");
     }
     heartBeat++;
-
-    if (! status.publish(stavSite)) {
+    
+    if (! status.publish(!stavSite)) {
       DEBUG_PRINTLN("status send failed");
     } else {
       DEBUG_PRINTLN("status send OK!");
     }
-    ticker.detach();
-    digitalWrite(BUILTIN_LED,HIGH);
-    digitalWrite(STATUSLED, HIGH);
+    digitalWrite(STATUSLED, stavSite);
   }
 }
 
