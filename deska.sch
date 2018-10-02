@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE eagle SYSTEM "eagle.dtd">
-<eagle version="7.7.0">
+<eagle version="9.1.3">
 <drawing>
 <settings>
 <setting alwaysvectorfont="no"/>
+<setting keepoldvectorfont="yes"/>
 <setting verticaltext="up"/>
 </settings>
 <grid distance="0.1" unitdist="inch" unit="inch" style="lines" multiple="1" display="no" altdistance="0.01" altunitdist="inch" altunit="inch"/>
@@ -5392,10 +5393,10 @@ Siemens, Hewlett-Packard, Texas Instuments, Sharp, Motorola&lt;p&gt;
 <part name="U$1" library="esp8266modules" deviceset="ESP01" device=""/>
 <part name="DETECT" library="led" deviceset="LED" device="3MM"/>
 <part name="D1" library="diode" deviceset="1N4004" device=""/>
-<part name="230V" library="con-amp-quick" deviceset="M02" device=""/>
+<part name="5V" library="con-amp-quick" deviceset="M02" device=""/>
 <part name="OK1" library="optocoupler" deviceset="PC817" device=""/>
 <part name="NAPAJENI" library="con-amp-quick" deviceset="M02" device=""/>
-<part name="R2" library="resistor" deviceset="R-EU_" device="0207/7" value="68k"/>
+<part name="R2" library="resistor" deviceset="R-EU_" device="0207/7" value="1k"/>
 <part name="GND1" library="supply1" deviceset="GND" device=""/>
 <part name="R3" library="resistor" deviceset="R-EU_" device="0207/7" value="10k"/>
 <part name="R4" library="resistor" deviceset="R-EU_" device="0207/7" value="1k"/>
@@ -5412,7 +5413,7 @@ Siemens, Hewlett-Packard, Texas Instuments, Sharp, Motorola&lt;p&gt;
 <instance part="U$1" gate="G$1" x="76.2" y="43.18"/>
 <instance part="DETECT" gate="G$1" x="5.08" y="48.26" rot="R90"/>
 <instance part="D1" gate="1" x="15.24" y="35.56" rot="R270"/>
-<instance part="230V" gate="G$1" x="-25.4" y="27.94"/>
+<instance part="5V" gate="G$1" x="-25.4" y="27.94"/>
 <instance part="OK1" gate="A" x="25.4" y="45.72"/>
 <instance part="NAPAJENI" gate="G$1" x="-25.4" y="12.7"/>
 <instance part="R2" gate="G$1" x="-7.62" y="40.64" rot="R90"/>
@@ -5437,7 +5438,7 @@ Siemens, Hewlett-Packard, Texas Instuments, Sharp, Motorola&lt;p&gt;
 </net>
 <net name="N$3" class="0">
 <segment>
-<pinref part="230V" gate="G$1" pin="2"/>
+<pinref part="5V" gate="G$1" pin="2"/>
 <pinref part="R2" gate="G$1" pin="1"/>
 <wire x1="-7.62" y1="30.48" x2="-17.78" y2="30.48" width="0.1524" layer="91"/>
 <wire x1="-7.62" y1="35.56" x2="-7.62" y2="30.48" width="0.1524" layer="91"/>
@@ -5445,7 +5446,7 @@ Siemens, Hewlett-Packard, Texas Instuments, Sharp, Motorola&lt;p&gt;
 </net>
 <net name="N$4" class="0">
 <segment>
-<pinref part="230V" gate="G$1" pin="1"/>
+<pinref part="5V" gate="G$1" pin="1"/>
 <wire x1="-17.78" y1="27.94" x2="15.24" y2="27.94" width="0.1524" layer="91"/>
 <wire x1="15.24" y1="27.94" x2="15.24" y2="33.02" width="0.1524" layer="91"/>
 <pinref part="D1" gate="1" pin="C"/>
