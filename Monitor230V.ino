@@ -63,9 +63,12 @@ unsigned int const sendTimeDelay  = 10000;
 signed long lastSendTime          = sendTimeDelay * -1;
 
 /****************************** Feeds ***************************************/
-Adafruit_MQTT_Publish version             = Adafruit_MQTT_Publish(&mqtt, "/home/Monitor230V/VersionSW");
-Adafruit_MQTT_Publish hb                  = Adafruit_MQTT_Publish(&mqtt, "/home/Monitor230V/HeartBeat");
-Adafruit_MQTT_Publish status              = Adafruit_MQTT_Publish(&mqtt, "/home/Monitor230V/status");
+#define MQTTBASE "/home/Monitor230V/"
+
+Adafruit_MQTT_Publish version             = Adafruit_MQTT_Publish(&mqtt, MQTTBASE "VersionSW");
+Adafruit_MQTT_Publish hb                  = Adafruit_MQTT_Publish(&mqtt, MQTTBASE "HeartBeat");
+Adafruit_MQTT_Publish status              = Adafruit_MQTT_Publish(&mqtt, MQTTBASE "status");
+Adafruit_MQTT_Publish voltage            = Adafruit_MQTT_Publish(&mqtt, MQTTBASE "Voltage");
 
 void MQTT_connect(void);
 
@@ -79,7 +82,10 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   ticker.attach(0.2, tick);
 }
 
-float versionSW                   = 0.1;
+ADC_MODE(ADC_VCC);
+#define MILIVOLT_TO_VOLT 1000.0
+
+float versionSW                   = 0.2;
 String versionSWString            = "Monitor 230V v";
 
 
@@ -153,8 +159,8 @@ void loop(void) {
   
   if (millis() - milisLastSend > SENDINTERVAL) {
     milisLastSend = millis();
-    digitalWrite(STATUSLED, HIGH);
-    delay(200);
+    digitalWrite(STATUSLED, !stavSite);
+    delay(100);
     MQTT_connect();
     if (! version.publish(versionSW)) {
       DEBUG_PRINTLN("version SW send failed");
@@ -173,6 +179,14 @@ void loop(void) {
     } else {
       DEBUG_PRINTLN("status send OK!");
     }
+
+    if (! voltage.publish((float)ESP.getVcc()/MILIVOLT_TO_VOLT)) {
+      DEBUG_PRINTLN("Voltage failed");
+    } else {
+      DEBUG_PRINTLN("Voltage OK!");
+    }  
+
+    
     digitalWrite(STATUSLED, stavSite);
   }
 }
