@@ -1,5 +1,5 @@
 //ESP8266-01
-//monitor sitoveho napeti
+//monitor sitoveho napeti 230V
 //kompilovat jako Generic ESP8266 Module
 
 #include <ESP8266WiFi.h>
@@ -28,10 +28,10 @@
 
 #define PORTSPEED     115200
 #define SENDINTERVAL  5000  //60sec
-#define MEASINTERVAL   1000  //1s
+#define MEASINTERVAL   10  //10ms
 
-#define STATUSLED     2
-#define PINMONITOR    3
+#define STATUSLED     2 //GPI02
+#define PINMONITOR    3 //Rx
 
 //for LED status
 #include <Ticker.h>
@@ -85,7 +85,7 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 ADC_MODE(ADC_VCC);
 #define MILIVOLT_TO_VOLT 1000.0
 
-float versionSW                   = 0.2;
+float versionSW                   = 0.3;
 String versionSWString            = "Monitor 230V v";
 
 
@@ -129,32 +129,23 @@ void setup(void) {
     delay(5000);
   }
   ticker.detach();
-  //keep LED on
 }
 
 void loop(void) {
 
+  //test site 230V na pinu
   if (millis() - milisLastMeas > MEASINTERVAL) {
-    DEBUG_PRINTLN("Meassurement");
     milisLastMeas = millis();
     //monitor
-    //********** CHANGE PIN FUNCTION  TO GPIO **********
-    //GPIO 1 (TX) swap the pin to a GPIO.
-    //pinMode(PINMONITOR, FUNCTION_3); 
-    //GPIO 3 (RX) swap the pin to a GPIO.
     pinMode(PINMONITOR, FUNCTION_3); 
-    //**************************************************
 
-    stavSite = digitalRead(PINMONITOR);
-    //digitalWrite(PINMONITOR,stavSite);
-
+    if (stavSite==0) { //aby se uchoval stav pokud sit vypadne jen na kratky okamzik
+      stavSite = digitalRead(PINMONITOR); //0 - 230V, 1 - 0V
+    }
+    
     //********** CHANGE PIN FUNCTION  TO TX/RX **********
-    //GPIO 1 (TX) swap the pin to a TX.
-    //pinMode(PINMONITOR, FUNCTION_0); 
-    //GPIO 3 (RX) swap the pin to a RX.
     pinMode(PINMONITOR, FUNCTION_0); 
-   //***************************************************
-    digitalWrite(STATUSLED, stavSite);
+    digitalWrite(STATUSLED, stavSite);  //0 - sviti, 1 - nesviti
   }
   
   if (millis() - milisLastSend > SENDINTERVAL) {
@@ -185,9 +176,9 @@ void loop(void) {
     } else {
       DEBUG_PRINTLN("Voltage OK!");
     }  
-
     
     digitalWrite(STATUSLED, stavSite);
+    stavSite = 1;
   }
 }
 
