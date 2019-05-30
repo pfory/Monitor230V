@@ -50,11 +50,12 @@ time_t getNtpTime();
 
 #define verbose
 #ifdef verbose
- #define PORTSPEED              115200
- #define DEBUG_PRINT(x)         Serial.print (x)
- #define DEBUG_PRINTDEC(x)      Serial.print (x, DEC)
- #define DEBUG_PRINTLN(x)       Serial.println (x)
- #define DEBUG_PRINTF(x, y)     Serial.printf (x, y)
+ #define PORTSPEED                          115200
+ #define DEBUG_PRINT(x)                     Serial.print (x)
+ #define DEBUG_PRINTDEC(x)                  Serial.print (x, DEC)
+ #define DEBUG_PRINTLN(x)                   Serial.println (x)
+ #define DEBUG_PRINTF(x, y)                 Serial.printf (x, y)
+ #define SERIAL_BEGIN                       Serial.begin(PORTSPEED)
 #else
  #define DEBUG_PRINT(x)
  #define DEBUG_PRINTDEC(x)
@@ -85,7 +86,7 @@ DoubleResetDetector drd(DRD_TIMEOUT, DRD_ADDRESS);
 
 #define CFGFILE "/config.json"
 
-float versionSW                             = 0.3;
+float versionSW                             = 0.31;
 String versionSWString                      = "Monitor 230V v";
 uint32_t heartBeat                          = 0;
 String received                             = "";
@@ -387,7 +388,8 @@ bool meassurement(void *) {
 
   digitalWrite(BUILTIN_LED, stavSite);
   delay(100);
-
+  
+  return true;
 }
 
 bool sendDataHA(void *) {
@@ -449,22 +451,18 @@ bool saveConfig() {
     DEBUG_PRINTLN(SPIFFS.format());
   }
 
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject &json = jsonBuffer.createObject();
+  StaticJsonDocument<1024> doc;
 
-  json["MQTT_server"] = mqtt_server;
-  json["MQTT_port"]   = mqtt_port;
-  json["MQTT_uname"]  = mqtt_username;
-  json["MQTT_pwd"]    = mqtt_key;
-  json["MQTT_base"]   = mqtt_base;
+  doc["MQTT_server"]             = mqtt_server;
+  doc["MQTT_port"]               = mqtt_port;
+  doc["MQTT_uname"]              = mqtt_username;
+  doc["MQTT_pwd"]                = mqtt_key;
+  doc["MQTT_base"]               = mqtt_base;
   
-  json["ip"] = WiFi.localIP().toString();
-  json["gateway"] = WiFi.gatewayIP().toString();
-  json["subnet"] = WiFi.subnetMask().toString();
+  doc["ip"]                      = WiFi.localIP().toString();
+  doc["gateway"]                 = WiFi.gatewayIP().toString();
+  doc["subnet"]                  = WiFi.subnetMask().toString();
 
-  // Store current Wifi credentials
-  // json["SSID"]        = WiFi.SSID();
-  // json["PSK"]         = WiFi.psk();
 
   File configFile = SPIFFS.open(CFGFILE, "w+");
   if (!configFile) {
@@ -473,16 +471,16 @@ bool saveConfig() {
     return false;
   } else {
     if (isDebugEnabled) {
-      json.printTo(Serial);
+      serializeJson(doc, Serial);
     }
-    json.printTo(configFile);
+    serializeJson(doc, configFile);
+    //json.printTo(configFile);
     configFile.close();
     SPIFFS.end();
     DEBUG_PRINTLN(F("\nSaved successfully"));
     return true;
   }
 }
-
 
 
 bool readConfig() {
@@ -501,49 +499,48 @@ bool readConfig() {
         std::unique_ptr<char[]> buf(new char[size]);
 
         configFile.readBytes(buf.get(), size);
-        DynamicJsonBuffer jsonBuffer;
-        JsonObject &json = jsonBuffer.parseObject(buf.get());
-
-        if (json.success()) {
+        DynamicJsonDocument doc(1024);
+        DeserializationError error = deserializeJson(doc, configFile);
+        JsonObject obj=doc.as<JsonObject>();
+        
+        if (error) {
+          DEBUG_PRINTLN(F("Failed to read file, using default configuration"));
+          return false;
+        } else {
           DEBUG_PRINTLN(F("Parsed json"));
           
-          if (json.containsKey("MQTT_server")) {
-            strcpy(mqtt_server, json["MQTT_server"]);
+          if (obj.containsKey("MQTT_server")) {
+            strcpy(mqtt_server, obj["MQTT_server"]);
             DEBUG_PRINT(F("MQTT server: "));
             DEBUG_PRINTLN(mqtt_server);
           }
-          if (json.containsKey("MQTT_port")) {
-            mqtt_port = json["MQTT_port"];
+          
+          if (obj.containsKey("MQTT_port")) {
+            mqtt_port = doc["MQTT_port"] | 1883;
             DEBUG_PRINT(F("MQTT port: "));
             DEBUG_PRINTLN(mqtt_port);
           }
-          if (json.containsKey("MQTT_uname")) {
-            strcpy(mqtt_username, json["MQTT_uname"]);
+
+          if (obj.containsKey("MQTT_uname")) {
+            strcpy(mqtt_username, doc["MQTT_uname"]);
             DEBUG_PRINT(F("MQTT username: "));
             DEBUG_PRINTLN(mqtt_username);
           }
-          if (json.containsKey("MQTT_pwd")) {
-            strcpy(mqtt_key, json["MQTT_pwd"]);
+          if (obj.containsKey("MQTT_pwd")) {
+            strcpy(mqtt_key, doc["MQTT_pwd"]);
             DEBUG_PRINT(F("MQTT password: "));
             DEBUG_PRINTLN(mqtt_key);
           }
-          if (json.containsKey("MQTT_base")) {
-            strcpy(mqtt_base, json["MQTT_base"]);
+          if (obj.containsKey("MQTT_base")) {
+            strcpy(mqtt_base, doc["MQTT_base"]);
             DEBUG_PRINT(F("MQTT base: "));
             DEBUG_PRINTLN(mqtt_base);
           }
-          // if (json.containsKey("SSID")) {
-            // my_ssid = (const char *)json["SSID"];
-          // }
-          // if (json.containsKey("PSK")) {
-            // my_psk = (const char *)json["PSK"];
-          // }
-          
-          if(json["ip"]) {
+          if (obj.containsKey("ip")) {
             DEBUG_PRINTLN("setting custom ip from config");
-            strcpy(static_ip, json["ip"]);
-            strcpy(static_gw, json["gateway"]);
-            strcpy(static_sn, json["subnet"]);
+            strcpy(static_ip, doc["ip"]);
+            strcpy(static_gw, doc["gateway"]);
+            strcpy(static_sn, doc["subnet"]);
             DEBUG_PRINTLN(static_ip);
           } else {
             DEBUG_PRINTLN("no custom ip in config");
@@ -551,15 +548,9 @@ bool readConfig() {
 
           
           DEBUG_PRINTLN(F("Parsed config:"));
-          if (isDebugEnabled) {
-            json.printTo(Serial);
-            DEBUG_PRINTLN();
-          }
+          DEBUG_PRINTLN(error.c_str());
+          DEBUG_PRINTLN();
           return true;
-        }
-        else {
-          DEBUG_PRINTLN(F("ERROR: failed to load json config"));
-          return false;
         }
       }
       DEBUG_PRINTLN(F("ERROR: unable to open config file"));
@@ -571,6 +562,7 @@ bool readConfig() {
   }
   return false;
 }
+
 
 void validateInput(const char *input, char *output)
 {
