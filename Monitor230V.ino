@@ -1,6 +1,8 @@
 //ESP8266-01
 //monitor sitoveho napeti 230V
 //kompilovat jako Generic ESP8266 Module
+//1M no SPIFSS
+//BUILTIN_LED = 6
 
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
@@ -25,9 +27,9 @@
 #endif 
 
 
-#define SEND_DELAY                           30000  //prodleva mezi poslanim dat v ms
+#define SEND_DELAY                           10000  //prodleva mezi poslanim dat v ms
 #define SENDSTAT_DELAY                       60000  //poslani statistiky kazdou minutu
-#define TESTPIN                                 10  //test pinu
+#define TESTPIN                                 10  //ms - test pinu 
 
 
 #define STATUSLED     2 //GPI02
@@ -85,10 +87,9 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 }
 
 ADC_MODE(ADC_VCC);
-#define MILIVOLT_TO_VOLT 1000.0
 
   //SW name & version
-#define     VERSION                          "0.31"
+#define     VERSION                          "0.33"
 #define     SW_NAME                          "Monitor 230V"
 
 void setup(void) {
@@ -213,8 +214,8 @@ bool sendStatisticHA(void *) {
   SenderClass sender;
   sender.add("VersionSW", VERSION);
   sender.add("HeartBeat", heartBeat++);
-  sender.add("RSSI", WiFi.RSSI());
-  sender.add("Napeti",  ESP.getVcc());
+  sender.add("RSSI",      WiFi.RSSI());
+  sender.add("Voltage",   ESP.getVcc());
   
   DEBUG_PRINTLN(F("Calling MQTT"));
   
@@ -227,10 +228,10 @@ bool sendDataHA(void *) {
 
   digitalWrite(STATUSLED, !stavSite);
 
-  sender.add("status",   stavSite);
+  sender.add("status",   !stavSite);  //stavSite= 0 = status 1 = 230V
   sender.sendMQTT(mqtt_server, mqtt_port, mqtt_username, mqtt_key, mqtt_base);
 
   digitalWrite(STATUSLED, stavSite);
-  stavSite = 1;
+  stavSite = 0;
   return true;
 }
