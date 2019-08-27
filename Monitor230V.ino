@@ -7,35 +7,49 @@
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
 #include <WiFiManager.h> 
-
-#define AIO_SERVER      "192.168.1.56"
-#define AIO_SERVERPORT  1883
-#define AIO_USERNAME    "datel"
-#define AIO_KEY         "hanka12"
+#include "Sender.h"
 
 #define verbose
 #ifdef verbose
- #define DEBUG_PRINT(x)         Serial.print (x)
- #define DEBUG_PRINTDEC(x)      Serial.print (x, DEC)
- #define DEBUG_PRINTLN(x)       Serial.println (x)
- #define DEBUG_PRINTF(x, y)     Serial.printf (x, y)
+  #define DEBUG_PRINT(x)                     Serial.print (x)
+  #define DEBUG_PRINTDEC(x)                  Serial.print (x, DEC)
+  #define DEBUG_PRINTLN(x)                   Serial.println (x)
+  #define DEBUG_PRINTF(x, y)                 Serial.printf (x, y)
+  #define PORTSPEED                          115200             
+  #define SERIAL_BEGIN                       Serial.begin(PORTSPEED)
 #else
- #define DEBUG_PRINT(x)
- #define DEBUG_PRINTDEC(x)
- #define DEBUG_PRINTLN(x)
- #define DEBUG_PRINTF(x, y)
+  #define DEBUG_PRINT(x)
+  #define DEBUG_PRINTDEC(x)
+  #define DEBUG_PRINTLN(x)
+  #define DEBUG_PRINTF(x, y)
 #endif 
 
-#define PORTSPEED     115200
-#define SENDINTERVAL  5000  //60sec
-#define MEASINTERVAL   10  //10ms
+
+#define SEND_DELAY                           30000  //prodleva mezi poslanim dat v ms
+#define SENDSTAT_DELAY                       60000  //poslani statistiky kazdou minutu
+#define TESTPIN                                 10  //test pinu
+
 
 #define STATUSLED     2 //GPI02
 #define PINMONITOR    3 //Rx
 
+#define ota
+#ifdef ota
+#define HOSTNAMEOTA   "Monitor230V"
+#include <ArduinoOTA.h>
+#endif
+
+#define AUTOCONNECTNAME   HOSTNAMEOTA
+#define AUTOCONNECTPWD    "password"
+
 //for LED status
 #include <Ticker.h>
 Ticker ticker;
+
+#include <timer.h>
+auto timer = timer_create_default(); // create a timer with default settings
+Timer<> default_timer; // save as above
+
 
 void tick()
 {
@@ -48,29 +62,17 @@ WiFiClient client;
 WiFiManager wifiManager;
 
 uint32_t heartBeat                    = 0;
-unsigned long milisLastSend           = 0;
-unsigned long milisLastMeas           = 0;
 byte stavSite                         = LOW;
 
+char      mqtt_server[40]             = "192.168.1.56";
+uint16_t  mqtt_port                   = 1883;
+char      mqtt_username[40]           = "datel";
+char      mqtt_key[20]                = "hanka12";
+char      mqtt_base[60]               = "/home/Monitor230V";
+char      static_ip[16]               = "192.168.1.115";
+char      static_gw[16]               = "192.168.1.1";
+char      static_sn[16]               = "255.255.255.0";
 
-IPAddress _ip           = IPAddress(192, 168, 1, 115);
-IPAddress _gw           = IPAddress(192, 168, 1, 1);
-IPAddress _sn           = IPAddress(255, 255, 255, 0);
-
-Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
-
-unsigned int const sendTimeDelay  = 10000;
-signed long lastSendTime          = sendTimeDelay * -1;
-
-/****************************** Feeds ***************************************/
-#define MQTTBASE "/home/Monitor230V/"
-
-Adafruit_MQTT_Publish version             = Adafruit_MQTT_Publish(&mqtt, MQTTBASE "VersionSW");
-Adafruit_MQTT_Publish hb                  = Adafruit_MQTT_Publish(&mqtt, MQTTBASE "HeartBeat");
-Adafruit_MQTT_Publish status              = Adafruit_MQTT_Publish(&mqtt, MQTTBASE "status");
-Adafruit_MQTT_Publish voltage            = Adafruit_MQTT_Publish(&mqtt, MQTTBASE "Voltage");
-
-void MQTT_connect(void);
 
 //gets called when WiFiManager enters configuration mode
 void configModeCallback (WiFiManager *myWiFiManager) {
@@ -85,126 +87,150 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 ADC_MODE(ADC_VCC);
 #define MILIVOLT_TO_VOLT 1000.0
 
-float versionSW                   = 0.3;
-String versionSWString            = "Monitor 230V v";
-
+  //SW name & version
+#define     VERSION                          "0.31"
+#define     SW_NAME                          "Monitor 230V"
 
 void setup(void) {
-  Serial.begin(PORTSPEED);
-  DEBUG_PRINT(versionSWString);
-  DEBUG_PRINT(versionSW);
+  SERIAL_BEGIN;
+  DEBUG_PRINT(F(SW_NAME));
+  DEBUG_PRINT(F(" "));
+  DEBUG_PRINTLN(F(VERSION));
   //set led pin as output
   pinMode(STATUSLED, OUTPUT);
-  // start ticker with 0.5 because we start in AP mode and try to connect
-  ticker.attach(0.6, tick);
+
+  ticker.attach(1, tick);
   
-  DEBUG_PRINTLN(ESP.getResetReason());
-  if (ESP.getResetReason()=="Software/System restart") {
-    heartBeat=1;
-  } else if (ESP.getResetReason()=="Power on") {
-    heartBeat=2;
-  } else if (ESP.getResetReason()=="External System") {
-    heartBeat=3;
-  } else if (ESP.getResetReason()=="Hardware Watchdog") {
-    heartBeat=4;
-  } else if (ESP.getResetReason()=="Exception") {
-    heartBeat=5;
-  } else if (ESP.getResetReason()=="Software Watchdog") {
-    heartBeat=6;
-  } else if (ESP.getResetReason()=="Deep-Sleep Wake") {
-    heartBeat=7;
-  }
+  rst_info *_reset_info = ESP.getResetInfoPtr();
+  uint8_t _reset_reason = _reset_info->reason;
+  DEBUG_PRINT("Boot-Mode: ");
+  DEBUG_PRINTLN(_reset_reason);
+  heartBeat = _reset_reason;
 
-  wifiManager.setConnectTimeout(10);
+  WiFiManager wifiManager;
+  //reset settings - for testing
+  //wifiManager.resetSettings();
+  
+  IPAddress _ip,_gw,_sn;
+  _ip.fromString(static_ip);
+  _gw.fromString(static_gw);
+  _sn.fromString(static_sn);
 
+  wifiManager.setSTAStaticIPConfig(_ip, _gw, _sn);
+  
+  DEBUG_PRINTLN(_ip);
+  DEBUG_PRINTLN(_gw);
+  DEBUG_PRINTLN(_sn);
+
+  //wifiManager.setConfigPortalTimeout(60); 
   //set callback that gets called when connecting to previous WiFi fails, and enters Access Point mode
   wifiManager.setAPCallback(configModeCallback);
-  
-  //WiFi.config(ip); 
-  wifiManager.setSTAStaticIPConfig(_ip, _gw, _sn);
-  if (!wifiManager.autoConnect("Monitor 230V", "password")) {
-    DEBUG_PRINTLN("failed to connect, we should reset as see if it connects");
+
+  if (!wifiManager.autoConnect(AUTOCONNECTNAME, AUTOCONNECTPWD)) { 
+    DEBUG_PRINTLN("failed to connect and hit timeout");
     delay(3000);
+    //reset and try again, or maybe put it to deep sleep
     ESP.reset();
     delay(5000);
-  }
+  } 
+  
+  #ifdef ota
+  //OTA
+  // Port defaults to 8266
+  // ArduinoOTA.setPort(8266);
+
+  // Hostname defaults to esp8266-[ChipID]
+  ArduinoOTA.setHostname(HOSTNAMEOTA);
+
+  // No authentication by default
+  // ArduinoOTA.setPassword("admin");
+
+  // Password can be set with it's md5 value as well
+  // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
+  // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
+
+  ArduinoOTA.onStart([]() {
+    // String type;
+    // if (ArduinoOTA.getCommand() == U_FLASH)
+      // type = "sketch";
+    // else // U_SPIFFS
+      // type = "filesystem";
+
+    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+    //DEBUG_PRINTLN("Start updating " + type);
+    DEBUG_PRINTLN("Start updating ");
+  });
+  ArduinoOTA.onEnd([]() {
+   DEBUG_PRINTLN("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    DEBUG_PRINTF("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    DEBUG_PRINTF("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) DEBUG_PRINTLN("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) DEBUG_PRINTLN("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) DEBUG_PRINTLN("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) DEBUG_PRINTLN("Receive Failed");
+    else if (error == OTA_END_ERROR) DEBUG_PRINTLN("End Failed");
+  });
+  ArduinoOTA.begin();
+#endif
+
+  void * a;
+  timer.every(SEND_DELAY, sendDataHA);
+  timer.every(SENDSTAT_DELAY, sendStatisticHA);
+  timer.every(TESTPIN, testPin);
+  sendStatisticHA(a);
   ticker.detach();
 }
 
 void loop(void) {
-
-  //test site 230V na pinu
-  if (millis() - milisLastMeas > MEASINTERVAL) {
-    milisLastMeas = millis();
-    //monitor
-    pinMode(PINMONITOR, FUNCTION_3); 
-
-    if (stavSite==0) { //aby se uchoval stav pokud sit vypadne jen na kratky okamzik
-      stavSite = digitalRead(PINMONITOR); //0 - 230V, 1 - 0V
-    }
-    
-    //********** CHANGE PIN FUNCTION  TO TX/RX **********
-    pinMode(PINMONITOR, FUNCTION_0); 
-    digitalWrite(STATUSLED, stavSite);  //0 - sviti, 1 - nesviti
-  }
-  
-  if (millis() - milisLastSend > SENDINTERVAL) {
-    milisLastSend = millis();
-    digitalWrite(STATUSLED, !stavSite);
-    delay(100);
-    MQTT_connect();
-    if (! version.publish(versionSW)) {
-      DEBUG_PRINTLN("version SW send failed");
-    } else {
-      DEBUG_PRINTLN("version SW send OK!");
-    }
-    if (! hb.publish(heartBeat)) {
-      DEBUG_PRINTLN("HB send failed");
-    } else {
-      DEBUG_PRINTLN("HB send OK!");
-    }
-    heartBeat++;
-    
-    if (! status.publish(!stavSite)) {
-      DEBUG_PRINTLN("status send failed");
-    } else {
-      DEBUG_PRINTLN("status send OK!");
-    }
-
-    if (! voltage.publish((float)ESP.getVcc()/MILIVOLT_TO_VOLT)) {
-      DEBUG_PRINTLN("Voltage failed");
-    } else {
-      DEBUG_PRINTLN("Voltage OK!");
-    }  
-    
-    digitalWrite(STATUSLED, stavSite);
-    stavSite = 1;
-  }
+  timer.tick(); // tick the timer
+#ifdef ota
+  ArduinoOTA.handle();
+#endif
 }
 
-// Function to connect and reconnect as necessary to the MQTT server.
-// Should be called in the loop function and it will take care if connecting.
-void MQTT_connect() {
-  int8_t ret;
 
-  // Stop if already connected.
-  if (mqtt.connected()) {
-    return;
+bool testPin(void *) {
+  //monitor
+  pinMode(PINMONITOR, FUNCTION_3); 
+
+  if (stavSite==0) { //aby se uchoval stav pokud sit vypadne jen na kratky okamzik
+    stavSite = digitalRead(PINMONITOR); //0 - 230V, 1 - 0V
   }
 
-  DEBUG_PRINT("Connecting to MQTT... ");
+  //********** CHANGE PIN FUNCTION  TO TX/RX **********
+  pinMode(PINMONITOR, FUNCTION_0); 
+  digitalWrite(STATUSLED, stavSite);  //0 - sviti, 1 - nesviti
+  return true;
+}
 
-  uint8_t retries = 3;
-  while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
-       DEBUG_PRINTLN(mqtt.connectErrorString(ret));
-       DEBUG_PRINTLN("Retrying MQTT connection in 5 seconds...");
-       mqtt.disconnect();
-       delay(5000);  // wait 5 seconds
-       retries--;
-       if (retries == 0) {
-         // basically die and wait for WDT to reset me
-         while (1);
-       }
-  }
-  DEBUG_PRINTLN("MQTT Connected!");
+bool sendStatisticHA(void *) {
+  DEBUG_PRINTLN(F(" - I am sending statistic to HA"));
+
+  SenderClass sender;
+  sender.add("VersionSW", VERSION);
+  sender.add("HeartBeat", heartBeat++);
+  sender.add("RSSI", WiFi.RSSI());
+  sender.add("Napeti",  ESP.getVcc());
+  
+  DEBUG_PRINTLN(F("Calling MQTT"));
+  
+  sender.sendMQTT(mqtt_server, mqtt_port, mqtt_username, mqtt_key, mqtt_base);
+  return true;
+}
+
+bool sendDataHA(void *) {
+  SenderClass sender;
+
+  digitalWrite(STATUSLED, !stavSite);
+
+  sender.add("status",   stavSite);
+  sender.sendMQTT(mqtt_server, mqtt_port, mqtt_username, mqtt_key, mqtt_base);
+
+  digitalWrite(STATUSLED, stavSite);
+  stavSite = 1;
+  return true;
 }
